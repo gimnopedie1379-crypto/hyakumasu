@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>百ます計算</title>
+<style>
+  :root {
+    --line: #333;
+    --head-bg: #eef3fb;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: "Yu Gothic", "Meiryo", sans-serif;
+    margin: 0;
+    background: #f0f0f0;
+    color: #222;
+  }
+
+  /* ===== 操作パネル（画面のみ） ===== */
+  .controls {
+    position: sticky;
+    top: 0;
+    background: #fff;
+    border-bottom: 1px solid #ccc;
+    padding: 12px 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+    z-index: 10;
+    box-shadow: 0 2px 6px rgba(0,0,0,.08);
+  }
+
+  .controls label { font-size: 14px; }
+
+  .controls select,
+  .controls input[type="text"] {
+    font-size: 14px;
+    padding: 4px 6px;
+  }
+
+  .controls button {
+    font-size: 15px;
+    padding: 8px 18px;
+    cursor: pointer;
+    border: none;
+    border-radius: 6px;
+    background: #2c6ed5;
+    color: #fff;
+  }
+  .controls button:hover { background: #2459ad; }
+  .controls button.secondary { background: #6b7280; }
+  .controls button.secondary:hover { background: #4b5563; }
+
+  .hint { font-size: 12px; color: #666; }
+
+  /* ===== ページ（A4） ===== */
+  .sheet {
+    width: 210mm;
+    min-height: 297mm;
+    background: #fff;
+    margin: 16px auto;
+    padding: 15mm;
+    box-shadow: 0 0 8px rgba(0,0,0,.2);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .sheet-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 8mm;
+  }
+
+  .title-area h1 {
+    margin: 0;
+    font-size: 30px;
+  }
+  .title-area .op-badge {
+    font-size: 20px;
+    color: #2c6ed5;
+    margin-left: 8px;
+  }
+  .page-label {
+    font-size: 16px;
+    color: #888;
+  }
+
+  .meta {
+    display: flex;
+    gap: 24px;
+    font-size: 16px;
+    margin-bottom: 6mm;
+  }
+  .meta .field {
+    border-bottom: 1px solid #999;
+    min-width: 120px;
+    padding: 2px 4px;
+  }
+
+  /* ===== 表 ===== */
+  table.grid {
+    border-collapse: collapse;
+    margin: auto;
+    table-layout: fixed;
+  }
+
+  table.grid td {
+    border: 2px solid var(--line);
+    width: 17mm;
+    height: 17mm;
+    text-align: center;
+    vertical-align: middle;
+    font-size: 28px;
+    font-weight: 600;
+    padding: 0;
+  }
+
+  /* 左上の演算子セル */
+  table.grid td.corner {
+    background: #2c6ed5;
+    color: #fff;
+    font-size: 30px;
+    border-color: var(--line);
+  }
+
+  /* 見出しセル */
+  table.grid td.head {
+    background: var(--head-bg);
+    font-size: 28px;
+  }
+
+  /* 答えセル */
+  table.grid td.answer {
+    color: #d12c2c;
+    font-size: 26px;
+  }
+
+  .footnote {
+    margin-top: auto;
+    padding-top: 6mm;
+    font-size: 12px;
+    color: #999;
+    text-align: right;
+  }
+
+  /* ===== 印刷 ===== */
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+
+  @media print {
+    body { background: #fff; }
+    .controls { display: none; }
+    .sheet {
+      margin: 0;
+      box-shadow: none;
+      width: 210mm;
+      height: 297mm;
+      page-break-after: always;
+    }
+    .sheet:last-child { page-break-after: auto; }
+    /* 色をそのまま印刷 */
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+<div class="controls">
+  <label>計算の種類:
+    <select id="op">
+      <option value="add">たし算（＋）</option>
+      <option value="sub">ひき算（−）</option>
+      <option value="mul">かけ算（×）</option>
+    </select>
+  </label>
+  <button id="generate">新しい問題を作る</button>
+  <button class="secondary" id="print">印刷する</button>
+  <span class="hint">「印刷する」を押すと 1ページ目＝問題、2ページ目＝答え になります。</span>
+</div>
+
+<!-- 問題ページ -->
+<div class="sheet" id="page-problem"></div>
+
+<!-- 答えページ -->
+<div class="sheet" id="page-answer"></div>
+
+<script>
+  const OP_INFO = {
+    add: { symbol: "＋", label: "たし算", calc: (r, c) => r + c },
+    sub: { symbol: "−", label: "ひき算", calc: (r, c) => r - c },
+    mul: { symbol: "×", label: "かけ算", calc: (r, c) => r * c },
+  };
+
+  // 0〜9 をシャッフルした配列を返す
+  function shuffledDigits() {
+    const a = [0,1,2,3,4,5,6,7,8,9];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  // 1ページ分のHTMLを組み立てる
+  // rowHeads: 縦軸（左端の数字）, colHeads: 横軸（上端の数字）
+  // showAnswers が true なら本体に答えを入れる
+  function buildSheet(opKey, rowHeads, colHeads, showAnswers) {
+    const op = OP_INFO[opKey];
+
+    let rows = "";
+
+    // ヘッダー行（左上の演算子セル + 横軸の数字）
+    rows += "<tr>";
+    rows += `<td class="corner">${op.symbol}</td>`;
+    for (const c of colHeads) {
+      rows += `<td class="head">${c}</td>`;
+    }
+    rows += "</tr>";
+
+    // 各行
+    for (const r of rowHeads) {
+      rows += "<tr>";
+      rows += `<td class="head">${r}</td>`;
+      for (const c of colHeads) {
+        if (showAnswers) {
+          rows += `<td class="answer">${op.calc(r, c)}</td>`;
+        } else {
+          rows += `<td></td>`;
+        }
+      }
+      rows += "</tr>";
+    }
+
+    const pageLabel = showAnswers ? "こたえ" : "もんだい";
+
+    return `
+      <div class="sheet-header">
+        <div class="title-area">
+          <h1>百ます計算<span class="op-badge">${op.label}</span></h1>
+        </div>
+        <div class="page-label">${pageLabel}</div>
+      </div>
+      <div class="meta">
+        <span>なまえ <span class="field"></span></span>
+        <span>日づけ <span class="field"></span></span>
+        <span>かかった時間 <span class="field"></span></span>
+      </div>
+      <table class="grid">${rows}</table>
+      <div class="footnote">百ます計算 ${op.label}</div>
+    `;
+  }
+
+  let currentRows = [];
+  let currentCols = [];
+  let currentOp = "add";
+
+  function generate() {
+    currentOp = document.getElementById("op").value;
+    currentRows = shuffledDigits();
+    currentCols = shuffledDigits();
+    render();
+  }
+
+  function render() {
+    document.getElementById("page-problem").innerHTML =
+      buildSheet(currentOp, currentRows, currentCols, false);
+    document.getElementById("page-answer").innerHTML =
+      buildSheet(currentOp, currentRows, currentCols, true);
+  }
+
+  document.getElementById("generate").addEventListener("click", generate);
+  document.getElementById("op").addEventListener("change", generate);
+  document.getElementById("print").addEventListener("click", () => window.print());
+
+  // 初期表示
+  generate();
+</script>
+
+</body>
+</html>
