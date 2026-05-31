@@ -92,14 +92,19 @@
 
   .meta {
     display: flex;
-    gap: 24px;
+    flex-wrap: wrap;
+    gap: 6px 24px;
     font-size: 16px;
     margin-bottom: 6mm;
   }
   .meta .field {
+    display: inline-block;
     border-bottom: 1px solid #999;
-    min-width: 120px;
+    width: 60mm;
     padding: 2px 4px;
+  }
+  .meta .field.short {
+    width: 35mm;
   }
 
   /* ===== 表 ===== */
@@ -249,8 +254,8 @@
       </div>
       <div class="meta">
         <span>なまえ <span class="field"></span></span>
-        <span>日づけ <span class="field"></span></span>
-        <span>かかった時間 <span class="field"></span></span>
+        <span>日づけ <span class="field short"></span></span>
+        <span>かかった時間 <span class="field short"></span></span>
       </div>
       <table class="grid">${rows}</table>
       <div class="footnote">百ます計算 ${op.label}</div>
